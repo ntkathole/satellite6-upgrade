@@ -476,8 +476,8 @@ def upgrade_using_foreman_maintain():
         hammer_file.close()
     if os.environ.get('FROM_VERSION') == os.environ.get('TO_VERSION'):
         # z stream upgrade
-        run('foreman-maintain upgrade run --target-version {} -y'.format(
+        run('foreman-maintain upgrade run --target-version {} --whitelist="foreman-tasks-not-running,foreman-tasks-not-paused" -y'.format(
             os.environ.get('TO_VERSION') + ".z"))
     else:
-        run('foreman-maintain upgrade run --target-version {} -y'.format(
+        run('foreman-maintain upgrade run --target-version {} --whitelist="foreman-tasks-not-running,foreman-tasks-not-paused" -y'.format(
             os.environ.get('TO_VERSION')))
