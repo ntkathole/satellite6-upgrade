@@ -8,24 +8,22 @@ from upgrade.helpers.tools import (
 )
 from automation_tools import (
     enable_ostree,
-    setup_satellite_firewall,
     subscribe,
     install_prerequisites
 )
 from automation_tools.satellite6.hammer import hammer, set_hammer_config
-from automation_tools.repository import enable_repos, disable_repos
-from automation_tools.utils import distro_info, update_packages
+from automation_tools.utils import distro_info
 from datetime import datetime
-from fabric.api import env, execute, put, run
+from fabric.api import env, execute, run
 from upgrade.helpers.logger import logger
 from upgrade.helpers.rhevm import (
     create_rhevm_instance,
     delete_rhevm_instance
 )
-if sys.version_info[0] is 2:
-    from StringIO import StringIO  # (import-error) pylint:disable=F0401
-else:  # pylint:disable=F0401,E0611
-    from io import StringIO
+from upgrade.helpers.tasks import (
+    setup_foreman_maintain,
+    upgrade_using_foreman_maintain
+)
 
 logger = logger()
 
@@ -91,61 +89,20 @@ def satellite6_upgrade():
         logger.warning('Wrong Satellite Version Provided to upgrade to. '
                        'Provide one of 6.1, 6.2, 6.3')
         sys.exit(1)
-    setup_satellite_firewall()
-    run('rm -rf /etc/yum.repos.d/rhel-{optional,released}.repo')
-    logger.info('Updating system packages ... ')
-    update_packages(quiet=True)
     # Setting Satellite to_version Repos
     major_ver = distro_info()[1]
-    # Following disables the old satellite repo and extra repos enabled
-    # during subscribe e.g Load balancer Repo
-    disable_repos('*', silent=True)
-    enable_repos('rhel-{0}-server-rpms'.format(major_ver))
-    enable_repos('rhel-server-rhscl-{0}-rpms'.format(major_ver))
-    enable_repos('rhel-{0}-server-extras-rpms'.format(major_ver))
-    # If CDN upgrade then enable satellite latest version repo
     if base_url is None:
-        enable_repos('rhel-{0}-server-satellite-{1}-rpms'.format(
-            major_ver, to_version))
-        # Remove old custom sat repo
-        for fname in os.listdir('/etc/yum.repos.d/'):
-            if 'sat' in fname.lower():
-                os.remove('/etc/yum.repos.d/{}'.format(fname))
-    # Else, consider this as Downstream upgrade
+        os.environ['DISTRIBUTION'] = "CDN"
     else:
-        # Add Sat6 repo from latest compose
-        satellite_repo = StringIO()
-        satellite_repo.write('[sat6]\n')
-        satellite_repo.write('name=satellite 6\n')
-        satellite_repo.write('baseurl={0}\n'.format(base_url))
-        satellite_repo.write('enabled=1\n')
-        satellite_repo.write('gpgcheck=0\n')
-        put(local_path=satellite_repo,
-            remote_path='/etc/yum.repos.d/sat6.repo')
-        satellite_repo.close()
-    # Check what repos are set
-    run('yum repolist')
-    # Stop katello services, except mongod
-    run('katello-service stop')
-    if to_version == '6.1':
-        run('service-wait mongod start')
-    run('yum clean all', warn_only=True)
-    # Updating the packages again after setting sat6 repo
-    logger.info('Updating satellite packages ... ')
-    preyum_time = datetime.now().replace(microsecond=0)
-    update_packages(quiet=False)
-    postyum_time = datetime.now().replace(microsecond=0)
-    logger.highlight('Time taken for satellite packages update - {}'.format(
-        str(postyum_time-preyum_time)))
-    # Running Upgrade
+        os.environ['DISTRIBUTION'] = "DOWNSTREAM"
+    # setup foreman-maintain
+    setup_foreman_maintain()
     preup_time = datetime.now().replace(microsecond=0)
-    if to_version == '6.1':
-        run('katello-installer --upgrade')
-    else:
-        run('satellite-installer --scenario satellite --upgrade')
+    # perform upgrade using foreman-maintain
+    upgrade_using_foreman_maintain()
     postup_time = datetime.now().replace(microsecond=0)
     logger.highlight('Time taken for Satellite Upgrade - {}'.format(
-        str(postup_time-preup_time)))
+        str(postup_time - preup_time)))
     set_hammer_config()
     # Rebooting the satellite for kernel update if any
     reboot(180)
@@ -171,62 +128,23 @@ def satellite6_zstream_upgrade():
     logger.highlight('\n========== SATELLITE UPGRADE =================\n')
     from_version = os.environ.get('FROM_VERSION')
     to_version = os.environ.get('TO_VERSION')
+    base_url = os.environ.get('BASE_URL')
     if not from_version == to_version:
         logger.warning('zStream Upgrade on Satellite cannot be performed as '
                        'FROM and TO versions are not same!')
         sys.exit(1)
-    base_url = os.environ.get('BASE_URL')
-    setup_satellite_firewall()
-    major_ver = distro_info()[1]
-    # Following disables the old satellite repo and extra repos enabled
-    # during subscribe e.g Load balancer Repo
-    disable_repos('*', silent=True)
-    enable_repos('rhel-{0}-server-rpms'.format(major_ver))
-    enable_repos('rhel-server-rhscl-{0}-rpms'.format(major_ver))
-    enable_repos('rhel-{0}-server-extras-rpms'.format(major_ver))
-    # If CDN upgrade then enable satellite latest version repo
     if base_url is None:
-        enable_repos('rhel-{0}-server-satellite-{1}-rpms'.format(
-            major_ver, to_version))
-        # Remove old custom sat repo
-        for fname in os.listdir('/etc/yum.repos.d/'):
-            if 'sat' in fname.lower():
-                os.remove('/etc/yum.repos.d/{}'.format(fname))
-    # Else, consider this as Downstream upgrade
+        os.environ['DISTRIBUTION'] = "CDN"
     else:
-        # Add Sat6 repo from latest compose
-        satellite_repo = StringIO()
-        satellite_repo.write('[sat6]\n')
-        satellite_repo.write('name=satellite 6\n')
-        satellite_repo.write('baseurl={0}\n'.format(base_url))
-        satellite_repo.write('enabled=1\n')
-        satellite_repo.write('gpgcheck=0\n')
-        put(local_path=satellite_repo,
-            remote_path='/etc/yum.repos.d/sat6.repo')
-        satellite_repo.close()
-    # Check what repos are set
-    run('yum repolist')
-    # Stop katello services, except mongod
-    run('katello-service stop')
-    if to_version == '6.1':
-        run('service-wait mongod start')
-    run('yum clean all', warn_only=True)
-    # Updating the packages again after setting sat6 repo
-    logger.info('Updating system and satellite packages... ')
-    preyum_time = datetime.now().replace(microsecond=0)
-    update_packages(quiet=False)
-    postyum_time = datetime.now().replace(microsecond=0)
-    logger.highlight('Time taken for system and satellite packages update - '
-                     '{}'.format(str(postyum_time-preyum_time)))
-    # Running Upgrade
+        os.environ['DISTRIBUTION'] = "DOWNSTREAM"
+    # setup foreman-maintain
+    setup_foreman_maintain()
     preup_time = datetime.now().replace(microsecond=0)
-    if to_version == '6.1':
-        run('katello-installer --upgrade')
-    else:
-        run('satellite-installer --scenario satellite --upgrade')
+    # perform upgrade using foreman-maintain
+    upgrade_using_foreman_maintain()
     postup_time = datetime.now().replace(microsecond=0)
     logger.highlight('Time taken for Satellite Upgrade - {}'.format(
-        str(postup_time-preup_time)))
+        str(postup_time - preup_time)))
     # Rebooting the satellite for kernel update if any
     reboot(180)
     host_ssh_availability_check(env.get('satellite_host'))
