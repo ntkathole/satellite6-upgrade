@@ -58,13 +58,13 @@ def check_necessary_env_variables_for_upgrade(product):
         failure.append('Product name should be one of {0}.'.format(
             ', '.join(products)))
     # From which version to upgrade
-    if os.environ.get('FROM_VERSION') not in ['6.3', '6.2', '6.1', '6.0']:
+    if os.environ.get('FROM_VERSION') not in ['6.4', '6.3', '6.2', '6.1', '6.0']:
         failure.append('Wrong FROM_VERSION provided to upgrade from. '
-                       'Provide one of 6.3, 6.2, 6.1, 6.0')
+                       'Provide one of 6.4, 6.3, 6.2, 6.1, 6.0')
     # To which version to upgrade
-    if os.environ.get('TO_VERSION') not in ['6.1', '6.2', '6.3']:
+    if os.environ.get('TO_VERSION') not in ['6.1', '6.2', '6.3', '6.4']:
         failure.append('Wrong TO_VERSION provided to upgrade to. '
-                       'Provide one of 6.1, 6.2, 6.3')
+                       'Provide one of 6.1, 6.2, 6.3, 6.4')
     # Check If OS is set for creating an instance name in rhevm
     if not os.environ.get('OS'):
         failure.append('Please provide OS version as rhel7 or rhel6, '
