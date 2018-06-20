@@ -127,6 +127,8 @@ def satellite6_upgrade():
         if base_url is None:
             enable_repos('rhel-{0}-server-satellite-{1}-rpms'.format(
                 major_ver, to_version))
+            if to_version not in ['6.1', '6.2', '6.3']:
+                enable_repos('rhel-7-server-satellite-maintenance-6-rpms')
             # Remove old custom sat repo
             for fname in os.listdir('/etc/yum.repos.d/'):
                 if 'sat' in fname.lower():
@@ -143,6 +145,19 @@ def satellite6_upgrade():
             put(local_path=satellite_repo,
                 remote_path='/etc/yum.repos.d/sat6.repo')
             satellite_repo.close()
+            # Add foreman-maintain repo for 6.4 and above upgrades
+            if to_version not in ['6.1', '6.2', '6.3']:
+                satellite_repo = StringIO()
+                satellite_repo.write('[foreman-maintain]\n')
+                satellite_repo.write('name=foreman-maintain\n')
+                satellite_repo.write('baseurl={0}\n'.format(
+                    os.environ.get('MAINTAIN_REPO')
+                ))
+                satellite_repo.write('enabled=1\n')
+                satellite_repo.write('gpgcheck=0\n')
+                put(local_path=satellite_repo,
+                    remote_path='/etc/yum.repos.d/foreman-maintain.repo')
+                satellite_repo.close()
         # Check what repos are set
         run('yum repolist')
         # Stop katello services, except mongod
@@ -225,6 +240,8 @@ def satellite6_zstream_upgrade():
         if base_url is None:
             enable_repos('rhel-{0}-server-satellite-{1}-rpms'.format(
                 major_ver, to_version))
+            if to_version not in ['6.1', '6.2', '6.3']:
+                enable_repos('rhel-7-server-satellite-maintenance-6-rpms')
             # Remove old custom sat repo
             for fname in os.listdir('/etc/yum.repos.d/'):
                 if 'sat' in fname.lower():
@@ -241,6 +258,19 @@ def satellite6_zstream_upgrade():
             put(local_path=satellite_repo,
                 remote_path='/etc/yum.repos.d/sat6.repo')
             satellite_repo.close()
+            # Add foreman-maintain repo for 6.4 and above upgrades
+            if to_version not in ['6.1', '6.2', '6.3']:
+                satellite_repo = StringIO()
+                satellite_repo.write('[foreman-maintain]\n')
+                satellite_repo.write('name=foreman-maintain\n')
+                satellite_repo.write('baseurl={0}\n'.format(
+                    os.environ.get('MAINTAIN_REPO')
+                ))
+                satellite_repo.write('enabled=1\n')
+                satellite_repo.write('gpgcheck=0\n')
+                put(local_path=satellite_repo,
+                    remote_path='/etc/yum.repos.d/foreman-maintain.repo')
+                satellite_repo.close()
         # Check what repos are set
         run('yum repolist')
         # Stop katello services, except mongod
