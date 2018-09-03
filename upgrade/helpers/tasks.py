@@ -32,12 +32,13 @@ from automation_tools.satellite6.hammer import (
     set_hammer_config
 )
 from automation_tools.utils import get_discovery_image
+from nailgun import entities
 from robozilla.decorators import bz_bug_is_open
 from upgrade.helpers.logger import logger
 from upgrade.helpers.docker import (
     attach_subscription_to_host_from_content_host
 )
-from fabric.api import env, execute, put, run
+from fabric.api import env, execute, put, run, warn_only
 if sys.version_info[0] is 2:
     from StringIO import StringIO  # (import-error) pylint:disable=F0401
 else:  # pylint:disable=F0401,E0611
@@ -605,7 +606,16 @@ def upgrade_using_foreman_maintain():
             remote_path='/root/.hammer/cli.modules.d/foreman.yml')
         hammer_file.close()
 
-    # whitelist foreman-tasks-not-paused and disk-performance check
+    with warn_only():
+        if os.environ.get('FROM_VERSION') == os.environ.get('TO_VERSION'):
+            # z stream upgrade
+            run('foreman-maintain upgrade check --target-version {}'
+                ' -y'.format(os.environ.get('TO_VERSION') + ".z"))
+        else:
+            run('foreman-maintain upgrade check --target-version {}'
+                ' -y'.format(os.environ.get('TO_VERSION')))
+
+    # whitelist disk-performance check
     # for 6.4 and 6.4.z upgrade.
     if os.environ.get('TO_VERSION') == '6.4':
         if os.environ.get('FROM_VERSION') == os.environ.get('TO_VERSION'):
@@ -743,3 +753,50 @@ def puppet_autosign_hosts(version, hosts, append=True):
         'ver2': '/etc/puppetlabs/puppet/autosign.conf'}
     for host in hosts:
         run('echo "{0}" {1} {2}'.format(host, append, puppetfile[puppetver]))
+
+
+def get_satellite_host():
+    """Get the satellite hostname depending on which jenkins variables are set
+
+    :return string : Returns the satellite hostname
+
+    Environment Variable:
+
+    RHEV_SAT_HOST
+        This is set, if we are using internal RHEV Templates and VM for
+        upgrade.
+    SATELLITE_HOSTNAME
+        This is set, in case user provides his personal satellite for
+        upgrade.
+        """
+    return os.environ.get(
+        'RHEV_SAT_HOST',
+        os.environ.get('SATELLITE_HOSTNAME')
+    )
+
+
+def wait_untill_capsule_sync(capsule):
+    """The polling function that waits for capsule sync task to finish
+
+    :param capsule: A capsule hostname
+    """
+    cap = entities.Capsule().search(
+        query={'search': 'name={}'.format(capsule)})[0]
+    active_tasks = cap.content_get_sync()['active_sync_tasks']
+    if len(active_tasks) >= 1:
+        logger.info(
+            'Wait for background capsule sync to finish on '
+            'capsule: {}'.format(cap.name))
+        for task in active_tasks:
+            entities.ForemanTask(id=task['id']).poll(timeout=2700)
+
+
+def pre_upgrade_system_checks(capsules):
+    """The preupgrade system checks necessary for smooth upgrade experience
+
+    :param capsules: The list of capsules
+    """
+    # Check and wait if the capsule sync task is running before upgrade
+    if capsules:
+        for capsule in capsules:
+            wait_untill_capsule_sync(capsule)

@@ -24,6 +24,7 @@ from upgrade.satellite import (
 from upgrade.helpers.logger import logger
 from upgrade.helpers.tasks import (
     check_necessary_env_variables_for_upgrade,
+    pre_upgrade_system_checks,
     post_upgrade_test_tasks
 )
 from upgrade.helpers.tools import (
@@ -51,7 +52,8 @@ def setup_products_for_upgrade(product, os_version):
     """
     env.disable_known_hosts = True
     if check_necessary_env_variables_for_upgrade(product):
-        sat_host = cap_hosts = clients6 = clients7 = puppet_clients7 = None
+        sat_host = cap_hosts = None
+        clients6 = clients7 = puppet_clients7 = puppet_clients6 = None
         logger.info('Setting up Satellite ....')
         sat_host = satellite6_setup(os_version)
         if product == 'capsule' or product == 'n-1' or product == 'longrun':
@@ -60,16 +62,21 @@ def setup_products_for_upgrade(product, os_version):
                 sat_host, os_version, False if product == 'n-1' else True)
         if product == 'client' or product == 'longrun':
             logger.info('Setting up Clients ....')
-            clients6, clients7, puppet_clients7 = satellite6_client_setup()
+            (
+                clients6, clients7, puppet_clients7, puppet_clients6
+             ) = satellite6_client_setup()
         setups_dict = {
             'sat_host': sat_host,
             'capsule_hosts': cap_hosts,
             'clients6': clients6,
             'clients7': clients7,
-            'puppet_clients7': puppet_clients7
+            'puppet_clients7': puppet_clients7,
+            'puppet_clients6': puppet_clients6
         }
         create_setup_dict(setups_dict)
-        return sat_host, cap_hosts, clients6, clients7, puppet_clients7
+        return (
+            sat_host, cap_hosts, clients6, clients7,
+            puppet_clients7, puppet_clients6)
 
 
 def product_upgrade(product):
@@ -166,7 +173,9 @@ def product_upgrade(product):
         # Get the setup dict returned by setup_products_for_upgrade
         setup_dict = get_setup_data()
         sat_host = setup_dict['sat_host']
+        cap_hosts = setup_dict['capsule_hosts']
         env['satellite_host'] = sat_host
+        pre_upgrade_system_checks(cap_hosts)
         try:
             with LogAnalyzer(sat_host):
                 current = execute(
@@ -189,7 +198,6 @@ def product_upgrade(product):
                 execute(foreman_debug, 'satellite_{}'.format(sat_host),
                         host=sat_host)
                 if product == 'capsule' or product == 'longrun':
-                    cap_hosts = setup_dict['capsule_hosts']
                     for cap_host in cap_hosts:
                         try:
                             with LogAnalyzer(cap_host):
@@ -241,10 +249,13 @@ def product_upgrade(product):
                     clients6 = setup_dict['clients6']
                     clients7 = setup_dict['clients7']
                     puppet_clients7 = setup_dict['puppet_clients7']
+                    puppet_clients6 = setup_dict['puppet_clients6']
                     satellite6_client_upgrade('rhel6', clients6)
                     satellite6_client_upgrade('rhel7', clients7)
                     satellite6_client_upgrade(
                         'rhel7', puppet_clients7, puppet=True)
+                    satellite6_client_upgrade(
+                        'rhel6', puppet_clients6, puppet=True)
         except Exception:
             # Generate foreman debug on failed satellite upgrade
             execute(foreman_debug, 'satellite_{}'.format(sat_host),
