@@ -568,6 +568,8 @@ def setup_foreman_maintain_repo():
     if os.environ.get('DISTRIBUTION') == 'CDN':
         enable_repos('rhel-7-server-satellite-maintenance-6-rpms')
     else:
+        os.environ['EXTERNAL_SAT_ORG'] = 'Sat6-CI'
+        os.environ['EXTERNAL_SAT_ACTIVATION_KEY'] = 'Satellite QA RHEL7'
         maintain_repo = StringIO()
         maintain_repo.write('[foreman-maintain]\n')
         maintain_repo.write('name=foreman-maintain\n')
@@ -626,7 +628,7 @@ def upgrade_using_foreman_maintain():
                 '-y'.format(os.environ.get('TO_VERSION') + ".z"))
         else:
             run('foreman-maintain upgrade run '
-                '--whitelist="disk-performance" '
+                '--whitelist="disk-performance,repositories-validate" '
                 '--target-version {} -y'.format(os.environ.get('TO_VERSION')))
     else:
         if os.environ.get('FROM_VERSION') == os.environ.get('TO_VERSION'):
