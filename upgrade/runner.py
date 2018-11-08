@@ -175,7 +175,7 @@ def product_upgrade(product):
         sat_host = setup_dict['sat_host']
         cap_hosts = setup_dict['capsule_hosts']
         env['satellite_host'] = sat_host
-        pre_upgrade_system_checks(cap_hosts)
+        #pre_upgrade_system_checks(cap_hosts)
         try:
             with LogAnalyzer(sat_host):
                 current = execute(
